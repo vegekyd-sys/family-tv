@@ -1,208 +1,257 @@
 package com.gathin.tvhome;
 
 import android.app.Activity;
+import android.content.res.ColorStateList;
 import android.graphics.Color;
-import android.os.Build;
-import android.view.WindowInsets;
-import android.view.WindowInsetsController;
 import android.graphics.drawable.ColorDrawable;
-import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.Drawable;
+import android.os.Build;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.FrameLayout;
-import android.widget.ImageView;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import java.util.ArrayList;
+import java.util.List;
 
-/** One home-derived shell for all five top-bar destinations. */
+/** Shared material and lifecycle, with content-sized layouts instead of a common panel rectangle. */
 final class HomeMenu {
+    enum Layout { SETTINGS, INPUTS, RECENT, NETWORK, LIBRARY }
     final LinearLayout panel, body;
     final PopupWindow popup;
     final TextView subtitle, footer;
-    final int width, height;
+    private final LinearLayout heading;
     private final Activity host;
     private final boolean animations, reducedMotion;
-    private LinearLayout rows;
+    private final Layout layout;
+    private LinearLayout rows, tileRow;
+    private ScrollView scroll;
+    private int tileCount, columns, tileWidth, tileHeight, desiredWidth;
+    private LiquidGlassBackdrop backdrop;
+    private final View home;
+    private Drawable homeForeground;
+    private float homeGridAlpha;
+    private int homeHintVisibility;
+    private final List<View> quietButtons = new ArrayList<>();
+    private final List<Drawable> buttonBackgrounds = new ArrayList<>();
+    private final List<ColorStateList> buttonColors = new ArrayList<>(), buttonTints = new ArrayList<>();
+    private boolean showing;
+    private int captureTicket;
 
-    HomeMenu(Activity host, String title, String description, boolean animations,
+    HomeMenu(Activity host, String title, String description, Layout layout, boolean animations,
              boolean reducedMotion, Runnable dismissed) {
-        this.host = host;
-        this.animations = animations;
-        this.reducedMotion = reducedMotion;
-        View decor = host.getWindow().getDecorView();
-        width = Math.min(dp(800), Math.max(dp(200), decor.getWidth() - dp(64)));
-        height = Math.min(dp(360), Math.max(dp(240), decor.getHeight() - dp(64)));
-        panel = new LinearLayout(host);
-        panel.setId(R.id.homeMenuPanel);
-        panel.setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(20), dp(16), dp(20), dp(16));
-        GradientDrawable surface = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{0xEB15212D, 0xEB0B141E});
-        surface.setCornerRadius(dp(20));
-        surface.setStroke(dp(1), 0x28FFFFFF);
-        panel.setBackground(surface);
-        TextView heading = text(title, 22, Color.WHITE);
-        heading.setId(R.id.homeMenuTitle);
-        heading.setGravity(Gravity.CENTER_VERTICAL);
-        panel.addView(heading, new LinearLayout.LayoutParams(-1, dp(36)));
-        subtitle = text(description, 13, 0xBBFFFFFF);
-        subtitle.setGravity(Gravity.CENTER_VERTICAL);
-        panel.addView(subtitle, new LinearLayout.LayoutParams(-1, dp(28)));
-        body = new LinearLayout(host);
-        body.setOrientation(LinearLayout.VERTICAL);
-        panel.addView(body, new LinearLayout.LayoutParams(-1, 0, 1));
-        footer = text("上下选择 · 确定打开 · 返回关闭", 13, 0xBBFFFFFF);
-        footer.setGravity(Gravity.BOTTOM);
-        panel.addView(footer, new LinearLayout.LayoutParams(-1, dp(28)));
-        popup = new PopupWindow(panel, width, height, true);
-        popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        popup.setOutsideTouchable(true);
-        popup.setAnimationStyle(0);
-        popup.setElevation(0f);
+        this.host = host; this.layout = layout;
+        this.animations = animations; this.reducedMotion = reducedMotion;
+        home = host.findViewById(R.id.root);
+        desiredWidth = layout == Layout.LIBRARY ? 672 : 294;
+        columns = layout == Layout.INPUTS ? 4 : layout == Layout.RECENT ? 4 : 2;
+        tileWidth = layout == Layout.INPUTS ? 132 : layout == Layout.RECENT ? 148 : layout == Layout.SETTINGS ? 128 : 132;
+        tileHeight = layout == Layout.INPUTS ? 96 : layout == Layout.RECENT ? 122 : layout == Layout.SETTINGS ? 68 : 80;
+        panel = new LinearLayout(host); panel.setId(R.id.homeMenuPanel);
+        panel.setOrientation(LinearLayout.VERTICAL); panel.setPadding(dp(10), dp(8), dp(10), dp(10));
+        panel.setClipChildren(false); panel.setClipToPadding(false);
+        heading = new LinearLayout(host); heading.setGravity(Gravity.CENTER_VERTICAL);
+        TextView titleView = text(title, 23, Color.WHITE); titleView.setId(R.id.homeMenuTitle);
+        heading.addView(titleView, new LinearLayout.LayoutParams(0, dp(38), 1));
+        panel.addView(heading, new LinearLayout.LayoutParams(-1, -2));
+        subtitle = text(description, 12, 0xBFFFFFFF);
+        subtitle.setPadding(0, dp(2), 0, dp(9));
+        panel.addView(subtitle, new LinearLayout.LayoutParams(-1, -2));
+        body = new LinearLayout(host); body.setOrientation(LinearLayout.VERTICAL);
+        body.setClipChildren(false); body.setClipToPadding(false);
+        panel.addView(body, new LinearLayout.LayoutParams(-1, -2));
+        footer = text("", 11, 0xA8FFFFFF); footer.setPadding(0, dp(10), 0, 0);
+        panel.addView(footer, new LinearLayout.LayoutParams(-1, -2));
+        popup = new PopupWindow(panel, dp(desiredWidth), ViewGroup.LayoutParams.WRAP_CONTENT, true);
+        popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT)); popup.setOutsideTouchable(true);
+        popup.setAnimationStyle(0); popup.setElevation(0f);
         popup.setOnDismissListener(() -> {
+            showing = false; ++captureTicket; backdrop = null;
             panel.animate().cancel();
-            GlassBackdrop.set(host, false);
+            if (home != null) {
+                home.setForeground(homeForeground);
+                if (host.findViewById(R.id.homeBrowseHint) != null) host.findViewById(R.id.homeBrowseHint).setVisibility(homeHintVisibility);
+                if (layout == Layout.LIBRARY && host.findViewById(R.id.grid) != null)
+                    host.findViewById(R.id.grid).setAlpha(homeGridAlpha);
+            }
+            for (int i = 0; i < quietButtons.size(); i++) {
+                View button = quietButtons.get(i); button.setBackground(buttonBackgrounds.get(i));
+                if (button instanceof TextView) {
+                    ((TextView) button).setTextColor(buttonColors.get(i));
+                    ((TextView) button).setCompoundDrawableTintList(buttonTints.get(i));
+                }
+            }
+            quietButtons.clear(); buttonBackgrounds.clear(); buttonColors.clear(); buttonTints.clear();
             dismissed.run();
         });
     }
 
     LinearLayout rows() {
         if (rows != null) return rows;
-        ScrollView scroll = new ScrollView(host);
-        scroll.setFillViewport(false);
-        scroll.setClipToPadding(false);
-        scroll.setVerticalScrollBarEnabled(false);
-        rows = new LinearLayout(host);
-        rows.setId(R.id.rows);
-        rows.setTag(this);
-        rows.setOrientation(LinearLayout.VERTICAL);
+        scroll = new ScrollView(host); scroll.setFillViewport(false); scroll.setClipToPadding(false);
+        scroll.setFocusable(false); scroll.setVerticalScrollBarEnabled(false); scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        rows = new LinearLayout(host); rows.setId(R.id.rows); rows.setTag(this);
+        rows.setOrientation(LinearLayout.VERTICAL); rows.setClipChildren(false); rows.setClipToPadding(false);
+        rows.setPadding(dp(3), dp(5), dp(3), dp(5));
         scroll.addView(rows, new ScrollView.LayoutParams(-1, -2));
-        body.addView(scroll, new LinearLayout.LayoutParams(-1, -1));
+        body.addView(scroll, new LinearLayout.LayoutParams(-1, -2));
+        scroll.getViewTreeObserver().addOnScrollChangedListener(this::refreshGlass);
         return rows;
     }
 
     View addRow(int icon, String label, String status, Runnable action) {
-        LinearLayout parent = rows();
-        View row = row(host, parent, icon, label, status, () -> { popup.dismiss(); action.run(); });
-        parent.addView(row);
-        return row;
+        if (layout == Layout.INPUTS || layout == Layout.NETWORK) return addTile(icon, label, status, null, action);
+        LiquidGlassAction row = action(icon, label, false, action);
+        row.setStatus(status); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(46));
+        lp.bottomMargin = dp(10); rows().addView(row, lp); return row;
     }
 
-    static View row(Activity host, LinearLayout parent, int iconRes, String label,
-                    String status, Runnable action) {
-        float d = host.getResources().getDisplayMetrics().density;
-        java.util.function.IntUnaryOperator dp = n -> Math.round(n * d);
-        FrameLayout row = new FrameLayout(host);
-        row.setLayoutParams(new LinearLayout.LayoutParams(-1, dp.applyAsInt(58)));
-        row.setFocusableInTouchMode(true);
-        row.setClickable(true);
-        row.setDefaultFocusHighlightEnabled(false);
-        GlassView glass = new GlassView(host, null);
-        glass.setRadius(dp.applyAsInt(16));
-        glass.setVisibility(View.INVISIBLE);
-        glass.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        row.addView(glass, new FrameLayout.LayoutParams(-1, -1));
-        LinearLayout line = new LinearLayout(host);
-        line.setGravity(Gravity.CENTER_VERTICAL);
-        line.setPadding(dp.applyAsInt(22), 0, dp.applyAsInt(22), 0);
-        row.addView(line, new FrameLayout.LayoutParams(-1, -1));
-        ImageView icon = new ImageView(host);
-        icon.setId(R.id.icon);
-        if (iconRes != 0) icon.setImageResource(iconRes);
-        icon.setColorFilter(Color.WHITE);
-        icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        line.addView(icon, new LinearLayout.LayoutParams(dp.applyAsInt(22), dp.applyAsInt(22)));
-        TextView title = new TextView(host);
-        title.setId(R.id.title);
-        title.setText(label);
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(17);
-        title.setTypeface(UiFont.get(host, R.string.font_medium));
-        title.setSingleLine(true);
-        title.setEllipsize(TextUtils.TruncateAt.END);
-        LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(0, -2, 1);
-        nameParams.setMarginStart(dp.applyAsInt(14));
-        line.addView(title, nameParams);
-        TextView state = new TextView(host);
-        state.setId(R.id.status);
-        state.setText(status);
-        state.setTextSize(13);
-        state.setTextColor(0xBBFFFFFF);
-        state.setTypeface(UiFont.get(host, R.string.font_body));
-        state.setSingleLine(true);
-        state.setMaxWidth(dp.applyAsInt(250));
-        state.setEllipsize(TextUtils.TruncateAt.END);
-        state.setPadding(dp.applyAsInt(12), 0, 0, 0);
-        line.addView(state, new LinearLayout.LayoutParams(-2, -2));
-        row.setOnFocusChangeListener((v, focus) -> glass.setVisibility(focus ? View.VISIBLE : View.INVISIBLE));
-        row.setOnClickListener(v -> action.run());
-        final boolean[] pressed = {false};
-        row.setOnKeyListener((v, key, event) -> {
-            if (key == KeyEvent.KEYCODE_DPAD_CENTER || key == KeyEvent.KEYCODE_ENTER) {
-                if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                    if (event.getRepeatCount() == 0) pressed[0] = true;
-                } else {
-                    boolean activate = pressed[0] && !event.isCanceled();
-                    pressed[0] = false;
-                    if (activate) v.performClick();
-                }
-                return true;
-            }
+    View addTile(int icon, String label, String status, Drawable artwork, Runnable action) {
+        rows();
+        if (tileCount % columns == 0) {
+            tileRow = new LinearLayout(host); tileRow.setClipChildren(false); tileRow.setClipToPadding(false);
+            LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(-1, -2); rp.bottomMargin = dp(10);
+            rows.addView(tileRow, rp);
+        }
+        LiquidGlassAction tile = action(icon, label, true, action); tile.setStatus(status);
+        if (artwork != null) tile.artwork(artwork, tileWidth - 20, (tileWidth - 20) * 9 / 16);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(tileWidth), dp(tileHeight));
+        if (tileCount % columns != 0) lp.leftMargin = dp(12);
+        tileRow.addView(tile, lp); tileCount++;
+        if (layout == Layout.INPUTS || layout == Layout.RECENT || layout == Layout.NETWORK)
+            desiredWidth = Math.max(layout == Layout.RECENT ? 320 : 158,
+                    Math.min(columns, tileCount) * (tileWidth + 12) - 12 + 26);
+        return tile;
+    }
+
+    void headerAction(int icon, String label, Runnable callback) {
+        LiquidGlassAction button = action(icon, label, false, callback);
+        button.label.setTextSize(13);
+        heading.addView(button, new LinearLayout.LayoutParams(dp(180), dp(36)));
+    }
+
+    void empty(String message) {
+        TextView label = text(message, 14, 0xBBFFFFFF); label.setPadding(dp(3), dp(18), 0, dp(20));
+        body.addView(label, new LinearLayout.LayoutParams(-1, -2));
+    }
+
+    private LiquidGlassAction action(int icon, String label, boolean vertical, Runnable callback) {
+        LiquidGlassAction action = new LiquidGlassAction(host, icon, label, vertical, animations && !reducedMotion);
+        action.setId(View.generateViewId()); action.setOnClickListener(v -> { popup.dismiss(); callback.run(); });
+        constrain(action, panel); return action;
+    }
+
+    static void constrain(View action, ViewGroup boundary) {
+        action.setOnKeyListener((v, key, event) -> {
             if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
-            if (key == KeyEvent.KEYCODE_DPAD_LEFT || key == KeyEvent.KEYCODE_DPAD_RIGHT) return true;
-            if (key == KeyEvent.KEYCODE_DPAD_UP || key == KeyEvent.KEYCODE_DPAD_DOWN) {
-                int step = key == KeyEvent.KEYCODE_DPAD_UP ? -1 : 1;
-                for (int i = parent.indexOfChild(v) + step; i >= 0 && i < parent.getChildCount(); i += step) {
-                    View next = parent.getChildAt(i);
-                    if (next.isFocusable()) { next.requestFocus(); break; }
-                }
-                return true;
-            }
-            return false;
+            int direction;
+            if (key == KeyEvent.KEYCODE_DPAD_UP) direction = View.FOCUS_UP;
+            else if (key == KeyEvent.KEYCODE_DPAD_DOWN) direction = View.FOCUS_DOWN;
+            else if (key == KeyEvent.KEYCODE_DPAD_LEFT) direction = View.FOCUS_LEFT;
+            else if (key == KeyEvent.KEYCODE_DPAD_RIGHT) direction = View.FOCUS_RIGHT;
+            else return false;
+            View next = v.focusSearch(direction);
+            if (next == null) return true;
+            for (android.view.ViewParent parent = next.getParent(); parent != null; parent = parent.getParent())
+                if (parent == boundary) return false;
+            return true;
         });
-        return row;
+    }
+
+    /** Compact contextual action also shares the optical component. */
+    static View row(Activity host, LinearLayout parent, int icon, String label, String status, Runnable action) {
+        LiquidGlassAction row = new LiquidGlassAction(host, icon, label, false, false);
+        row.setStatus(status); row.setLayoutParams(new LinearLayout.LayoutParams(-1, Math.round(48 * host.getResources().getDisplayMetrics().density)));
+        row.setOnClickListener(v -> action.run()); constrain(row, parent); return row;
     }
 
     void show() {
-        GlassBackdrop.set(host, true);
-        popup.showAtLocation(host.getWindow().getDecorView(), Gravity.CENTER, 0, 0);
-        immersive(panel);
-        panel.setAlpha(animations ? 0f : 1f);
-        if (animations) panel.animate().alpha(1f).setDuration(reducedMotion ? Motion.REDUCED_MS : 180).start();
-        if (rows != null) {
-            for (int i = 0; i < rows.getChildCount(); i++) {
-                if (rows.getChildAt(i).isFocusable()) { rows.getChildAt(i).requestFocus(); break; }
+        View decor = host.getWindow().getDecorView();
+        subtitle.setVisibility(TextUtils.isEmpty(subtitle.getText()) ? View.GONE : View.VISIBLE);
+        footer.setVisibility(TextUtils.isEmpty(footer.getText()) ? View.GONE : View.VISIBLE);
+        int width = Math.min(dp(desiredWidth), decor.getWidth() - dp(72));
+        popup.setWidth(width);
+        int top = dp(layout == Layout.LIBRARY ? 108 : 112), maxHeight = Math.max(dp(160), decor.getHeight() - top - dp(28));
+        panel.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        if (panel.getMeasuredHeight() > maxHeight && scroll != null) {
+            scroll.getLayoutParams().height = Math.max(dp(90), maxHeight - (panel.getMeasuredHeight() - scroll.getMeasuredHeight()));
+        }
+        showing = true;
+        if (home != null) {
+            homeForeground = home.getForeground(); home.setForeground(new ColorDrawable(0x40050910));
+            View hint = host.findViewById(R.id.homeBrowseHint);
+            if (hint != null) { homeHintVisibility = hint.getVisibility(); hint.setVisibility(View.INVISIBLE); }
+            if (layout == Layout.LIBRARY && host.findViewById(R.id.grid) != null) {
+                View grid = host.findViewById(R.id.grid); homeGridAlpha = grid.getAlpha(); grid.setAlpha(.12f);
+            }
+            ViewGroup buttons = host.findViewById(R.id.topButtons);
+            if (buttons != null) for (int i = 0; i < buttons.getChildCount(); i++) {
+                View button = buttons.getChildAt(i); quietButtons.add(button); buttonBackgrounds.add(button.getBackground()); button.setBackground(null);
+                TextView label = button instanceof TextView ? (TextView) button : null;
+                buttonColors.add(label == null ? null : label.getTextColors());
+                buttonTints.add(label == null ? null : label.getCompoundDrawableTintList());
+                if (label != null) { label.setTextColor(0xBFFFFFFF); label.setCompoundDrawableTintList(ColorStateList.valueOf(0xBFFFFFFF)); }
             }
         }
+        popup.showAtLocation(decor, Gravity.TOP | Gravity.RIGHT, dp(46), top); immersive(panel);
+        panel.setAlpha(animations && !reducedMotion ? 0 : 1);
+        if (animations && !reducedMotion) panel.animate().alpha(1).setDuration(180).start();
+        panel.post(() -> {
+            if (!showing) return;
+            View first = firstAction(body);
+            if (first == null) first = firstAction(heading);
+            if (first != null) first.requestFocus();
+            capture();
+        });
+        // The top-bar backdrop may still be completing its existing blur transition.
+        panel.postDelayed(() -> { if (showing) capture(); }, 360);
     }
 
+    private View firstAction(View view) {
+        if (view instanceof LiquidGlassAction) return view;
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View found = firstAction(group.getChildAt(i)); if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
+    private void capture() {
+        if (home == null) return;
+        int ticket = ++captureTicket;
+        LiquidGlassBackdrop.capture(home, value -> {
+            if (!showing || ticket != captureTicket) return;
+            backdrop = value; refreshGlass();
+        });
+    }
+    void refreshGlass() { if (backdrop != null && showing) bind(panel); }
+    private void bind(View view) {
+        if (view instanceof LiquidGlassAction) ((LiquidGlassAction) view).setBackdrop(backdrop);
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) bind(group.getChildAt(i));
+        }
+    }
     static void immersive(View view) {
-        view.getRootView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+        view.getRootView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
         if (Build.VERSION.SDK_INT >= 30 && view.getWindowInsetsController() != null) {
             WindowInsetsController controller = view.getWindowInsetsController();
             controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
             controller.hide(WindowInsets.Type.systemBars());
         }
     }
-
     private TextView text(String value, int size, int color) {
-        TextView view = new TextView(host);
-        view.setText(value);
-        view.setTextSize(size);
-        view.setTextColor(color);
-        view.setTypeface(UiFont.get(host, R.string.font_medium));
-        view.setSingleLine(true);
-        view.setEllipsize(TextUtils.TruncateAt.END);
-        view.setIncludeFontPadding(false);
-        return view;
+        TextView v = new TextView(host); v.setText(value); v.setTextSize(size); v.setTextColor(color);
+        v.setTypeface(UiFont.get(host, R.string.font_medium)); v.setSingleLine(true); v.setEllipsize(TextUtils.TruncateAt.END);
+        v.setIncludeFontPadding(false); v.setGravity(Gravity.CENTER_VERTICAL); return v;
     }
     private int dp(int value) { return Math.round(value * host.getResources().getDisplayMetrics().density); }
 }

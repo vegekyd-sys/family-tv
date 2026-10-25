@@ -1500,6 +1500,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (appLibrary != null) appLibrary.close();
         if (openPopup != null) openPopup.dismiss();
         libraryFocusPending = false;
+        hideGlass();
         libraryFromTopBar = false;
         appLibrary = new AppLibraryDialog(this, animations, reducedMotion, appLibrarySelection, adapter::containsPackage, () -> reloadApps(false), () -> {
             appLibrary = null;
@@ -2626,11 +2627,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         return 0xFF000000 | (r << 16) | (g << 8) | b;
     }
 
-    private HomeMenu homeMenu(String title, String description, View anchor) {
+    private HomeMenu homeMenu(String title, String description, View anchor, HomeMenu.Layout layout) {
         if (appLibrary != null) appLibrary.close();
         if (openPopup != null) openPopup.dismiss();
+        hideGlass();
         final HomeMenu[] holder = new HomeMenu[1];
-        HomeMenu menu = new HomeMenu(this, title, description, animations, reducedMotion, () -> {
+        HomeMenu menu = new HomeMenu(this, title, description, layout, animations, reducedMotion, () -> {
             if (openPopup == holder[0].popup) openPopup = null;
             anchor.requestFocus();
         });
@@ -2640,18 +2642,20 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void showRecentMenu() {
-        HomeMenu menu = homeMenu("最近打开", "本地入口记录 · 观看进度请进入极光查看", findViewById(R.id.btnFamily));
-        menu.addRow(R.drawable.ic_recent, "极光观看历史", "", () -> familyShelf.open("history"));
+        HomeMenu menu = homeMenu("最近打开", "本地入口记录", findViewById(R.id.btnFamily), HomeMenu.Layout.RECENT);
+        menu.headerAction(R.drawable.ic_recent, "极光观看历史", () -> familyShelf.open("history"));
         for (String id : familyShelf.recent()) {
-            menu.addRow(R.drawable.ic_recent, familyShelf.label(id), "", () -> familyShelf.open(id));
+            String art = id.equals("warriors") || id.equals("warriors_search") ? "nba" : id;
+            menu.addTile(R.drawable.ic_recent, familyShelf.label(id), "", ArtCatalog.banner(this, art), () -> familyShelf.open(id));
         }
+        if (familyShelf.recent().length == 0) menu.empty("打开内容后，会在这里留下入口");
         menu.show();
     }
 
     private void openNetworkPill() {
         CharSequence network = wifiIconOnly ? btnWifi.getContentDescription() : btnWifi.getText();
         HomeMenu menu = homeMenu("网络", TextUtils.isEmpty(network) ? "连接与网络应用" : network.toString(),
-                findViewById(topMenu ? R.id.btnSettings : R.id.btnWifi));
+                findViewById(topMenu ? R.id.btnSettings : R.id.btnWifi), HomeMenu.Layout.NETWORK);
         menu.addRow(R.drawable.ic_wifi, "Wi-Fi 设置", "", () -> open(systemIntent(Settings.ACTION_WIFI_SETTINGS)));
         Intent intent = vpnApp.isEmpty() ? null : getPackageManager().getLeanbackLaunchIntentForPackage(vpnApp);
         if (intent == null && !vpnApp.isEmpty()) intent = getPackageManager().getLaunchIntentForPackage(vpnApp);
@@ -2666,13 +2670,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void showHomeSettings() {
-        HomeMenu menu = homeMenu("设置", "电视与桌面", findViewById(R.id.btnSettings));
+        HomeMenu menu = homeMenu("设置", "", findViewById(R.id.btnSettings), HomeMenu.Layout.SETTINGS);
         menu.addRow(R.drawable.ic_settings, "系统设置", "", () -> open(systemIntent(Settings.ACTION_SETTINGS)));
-        menu.addRow(R.drawable.ic_home_settings_pill, getString(R.string.launcher_settings), "",
+        menu.addRow(R.drawable.ic_home_settings_pill, "桌面设置", "",
                 () -> startActivityForResult(new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST));
-        menu.addRow(R.drawable.ic_swap_vert, getString(R.string.reorder), "", this::toggleReorder);
-        if (moduleCards) menu.addRow(R.drawable.ic_apps, getString(R.string.module_cards), "", this::showModuleCards);
-        if (dockRow) menu.addRow(R.drawable.ic_apps, getString(R.string.dock_edit), "", this::startDockEdit);
+        menu.addTile(R.drawable.ic_swap_vert, "调整顺序", "", null, this::toggleReorder);
+        if (moduleCards) menu.addTile(R.drawable.ic_apps, getString(R.string.module_cards), "", null, this::showModuleCards);
+        if (dockRow) menu.addTile(R.drawable.ic_apps, getString(R.string.dock_edit), "", null, this::startDockEdit);
         menu.show();
     }
 
@@ -2827,7 +2831,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private void showInputs() {
         List<CoocaaSources.Source> coocaa = coocaaSources ? CoocaaSources.list(this) : Collections.emptyList();
         View anchor = findViewById(topMenu ? R.id.btnSettings : R.id.btnInputs);
-        HomeMenu menu = homeMenu("输入源", "选择电视信号来源", anchor);
+        HomeMenu menu = homeMenu("输入源", "选择电视信号", anchor, HomeMenu.Layout.INPUTS);
         LinearLayout rows = menu.rows();
         final PopupWindow popup = menu.popup;
 
@@ -3007,6 +3011,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void addSeparator(LinearLayout rows) {
+        if (rows.getTag() instanceof HomeMenu) return;
         View line = new View(this);
         line.setBackgroundColor(0x1FFFFFFF);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (int) density);
@@ -3051,7 +3056,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** Optional single-gear configuration uses the same menu shell. */
     private void showTopMenu() {
         View anchor = findViewById(R.id.btnSettings);
-        HomeMenu menu = homeMenu("设置", "电视与桌面", anchor);
+        HomeMenu menu = homeMenu("设置", "", anchor, HomeMenu.Layout.SETTINGS);
         LinearLayout rows = menu.rows();
         PopupWindow popup = menu.popup;
         // Inputs opens its own list once this one has closed.

@@ -231,6 +231,7 @@
 
             <LinearLayout
                 android:id="@+id/topButtons"
+                android:baselineAligned="false"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_alignParentEnd="true"
@@ -312,6 +313,7 @@
     </LinearLayout>
 
     <TextView
+        android:id="@+id/homeBrowseHint"
         android:layout_width="wrap_content" android:layout_height="wrap_content"
         android:layout_gravity="bottom|center_horizontal" android:layout_marginBottom="12dp"
         android:text="按下浏览更多应用" android:textColor="#88FFFFFF" android:textSize="11sp"
