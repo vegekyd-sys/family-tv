@@ -63,4 +63,6 @@
         <item quantity="other">%1$d 个应用</item>
     </plurals>
     <string name="greeting_with_name">%1$s，%2$s</string>
+    <string name="module_cards">内容卡片</string>
+    <string name="vpn_off">VPN 未连接</string>
 </resources>

@@ -80,7 +80,7 @@ key(3);t=tree();check('HOME 恢复单行首屏',has(t,'NBA') and not has(t,'云�
 key(20);tree();key(3);t=tree();check('复用桌面时 HOME 同样回到单行首屏',has(t,'NBA') and not has(t,'云视听极光'))
 tap('最近打开');t=tree();check('首页展开最近打开记录',has(t,'极光观看历史') and has(t,'宝可梦'));shot('recent.png')
 tap('极光观看历史');t=tree();check('历史 URI 交付测试替身',any('tenvideo2://?action=10' in n.get('text','') for n in t.iter('node')))
-key(4);tree();tap(APP+':id/btnSettings');t=tree();check('原设置按钮仍能打开系统设置',any(n.get('package')=='com.android.settings' for n in t.iter('node')))
+key(4);tree();tap(APP+':id/btnSettings');t=tree();check('设置入口先展开统一菜单',has(t,'系统设置'));tap('系统设置');t=tree();check('原设置按钮仍能打开系统设置',any(n.get('package')=='com.android.settings' for n in t.iter('node')))
 key(4);t=tree();check('设置返回后保留单行首屏',has(t,'NBA') and not has(t,'云视听极光'))
 key(20);tree()
 adb('shell','am','force-stop',APP);adb('shell','am','start','-a','android.intent.action.MAIN','-c','android.intent.category.HOME','-n',COMPONENT);t=tree()

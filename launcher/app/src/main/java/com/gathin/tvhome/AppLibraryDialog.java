@@ -21,7 +21,6 @@ import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -81,6 +80,7 @@ final class AppLibraryDialog {
     private final Predicate<String> onHome;
     private final Runnable changed;
     private final LinearLayout panel;
+    private final HomeMenu homeMenu;
     private final boolean reducedMotion;
     private final boolean selectionMode;
     private final boolean animations;
@@ -103,7 +103,6 @@ final class AppLibraryDialog {
     private SpringAnimation spring;
     private float scrollOffset;
     private boolean highlightShown;
-    private final int catalogWidth;
 
     private void stopHighlight() {
         if (spring != null) spring.cancel();
@@ -138,12 +137,6 @@ final class AppLibraryDialog {
         return bg;
     }
 
-    private void resize(int width, int height) {
-        popup.setWidth(width);
-        popup.setHeight(height);
-        if (popup.isShowing()) popup.update(width, height);
-    }
-
     AppLibraryDialog(Activity activity, boolean animations, boolean reducedMotion, boolean selectionMode, Predicate<String> onHome, Runnable changed, Runnable dismissed, java.util.function.Consumer<String> focusedApp) {
         this.activity = activity;
         this.animations = animations;
@@ -155,27 +148,16 @@ final class AppLibraryDialog {
         this.dismissed = dismissed;
         this.focusedApp = focusedApp;
         density = activity.getResources().getDisplayMetrics().density;
-        panel = new LinearLayout(activity);
-        panel.setLayoutDirection(rtl ? View.LAYOUT_DIRECTION_RTL : View.LAYOUT_DIRECTION_LTR);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(12), dp(8), dp(12), dp(12));
-        panel.setBackgroundResource(R.drawable.glass_panel);
-        View decor = activity.getWindow().getDecorView();
-        catalogWidth = Math.min(dp(800), Math.max(dp(200), decor.getWidth() - dp(64)));
-        int width = catalogWidth;
-        int height = dp(306);
-        popup = new PopupWindow(panel, width, height, true);
-        popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        popup.setOutsideTouchable(true);
-        popup.setAnimationStyle(0);
-        popup.setOnDismissListener(() -> {
-            GlassBackdrop.set(activity, false);
+        homeMenu = new HomeMenu(activity, activity.getString(R.string.app_library), "", animations, reducedMotion, () -> {
             closed = true;
             dismissActions();
             stopHighlight();
             icons.clear();
             dismissed.run();
         });
+        panel = homeMenu.body;
+        panel.setLayoutDirection(rtl ? View.LAYOUT_DIRECTION_RTL : View.LAYOUT_DIRECTION_LTR);
+        popup = homeMenu.popup;
     }
 
     void close() {
@@ -192,19 +174,7 @@ final class AppLibraryDialog {
         load(true);
     }
 
-    private void reveal() {
-        GlassBackdrop.set(activity, true);
-        popup.showAtLocation(activity.getWindow().getDecorView(), Gravity.CENTER, 0, 0);
-        View container = panel.getRootView();
-        if (container.getLayoutParams() instanceof WindowManager.LayoutParams) {
-            WindowManager.LayoutParams params = (WindowManager.LayoutParams) container.getLayoutParams();
-            params.flags |= WindowManager.LayoutParams.FLAG_DIM_BEHIND;
-            params.dimAmount = 0.25f;
-            activity.getWindowManager().updateViewLayout(container, params);
-        }
-        panel.setAlpha(0f);
-        panel.animate().alpha(1f).setDuration(reducedMotion ? Motion.REDUCED_MS : 180).start();
-    }
+    private void reveal() { homeMenu.show(); }
 
     /** Called by the activity's existing package receiver; an uninstall cannot leave a stale action. */
     /** Packages with a leanback entry, from the last refresh. */
@@ -348,29 +318,14 @@ final class AppLibraryDialog {
 
     private void showCatalog() {
         stopHighlight();
-        resize(catalogWidth, dp(306));
         panel.removeAllViews();
-        LinearLayout header = new LinearLayout(activity);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(12), dp(4), dp(8), dp(4));
-        TextView title = text(activity.getString(R.string.app_library), 22, Color.WHITE);
-        header.addView(title, new LinearLayout.LayoutParams(0, dp(36), 1));
-        title.setGravity(Gravity.CENTER_VERTICAL);
-        title.setSingleLine(true);
-        title.setEllipsize(TextUtils.TruncateAt.END);
-        TextView count = text(activity.getResources().getQuantityString(
-                R.plurals.library_app_count, totalApps, totalApps), 13, 0xA6FFFFFF);
-        count.setSingleLine(true);
-        header.addView(count, new LinearLayout.LayoutParams(-2, -2));
-        panel.addView(header, new LinearLayout.LayoutParams(-1, dp(44)));
-        instructions = text(hint(false), 13, 0xBBFFFFFF);
-        instructions.setSingleLine(true);
-        instructions.setEllipsize(TextUtils.TruncateAt.END);
-        instructions.setPadding(dp(12), 0, dp(12), dp(6));
-        panel.addView(instructions, new LinearLayout.LayoutParams(-1, dp(26)));
+        homeMenu.subtitle.setText(activity.getResources().getQuantityString(
+                R.plurals.library_app_count, totalApps, totalApps));
+        instructions = homeMenu.footer;
+        instructions.setText(hint(false) + " · 返回关闭");
         panel.setFocusableInTouchMode(apps.isEmpty());
         if (apps.isEmpty()) {
-            instructions.setVisibility(View.GONE);
+            instructions.setText("返回关闭");
             heading(activity.getString(R.string.library_empty));
             panel.setFocusableInTouchMode(true);
             panel.requestFocus();
@@ -542,7 +497,7 @@ final class AppLibraryDialog {
         int menuWidth = dp(220);
         for (int i = 0; i < rows.getChildCount(); i++) {
             TextView title = rows.getChildAt(i).findViewById(R.id.title);
-            menuWidth = Math.max(menuWidth, (int) Math.ceil(title.getPaint().measureText(title.getText().toString())) + dp(58));
+            menuWidth = Math.max(menuWidth, (int) Math.ceil(title.getPaint().measureText(title.getText().toString())) + dp(104));
             title.setEllipsize(TextUtils.TruncateAt.END);
         }
         menuWidth = Math.min(menuWidth, panel.getWidth() - dp(24));
@@ -561,26 +516,14 @@ final class AppLibraryDialog {
         menuPanel.setScaleY(0.92f);
         menuPanel.setTranslationY(-dp(8));
         menu.showAtLocation(activity.getWindow().getDecorView(), Gravity.TOP | Gravity.START, x, y);
+        HomeMenu.immersive(menuPanel);
         menuPanel.animate().alpha(1f).scaleY(1f).translationY(0f).setDuration(reducedMotion ? Motion.REDUCED_MS : 220)
                 .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
         rows.getChildAt(0).requestFocus();
     }
 
     private void addAction(LinearLayout rows, int label, Runnable action) {
-        View row = activity.getLayoutInflater().inflate(R.layout.item_input, rows, false);
-        ((TextView) row.findViewById(R.id.title)).setText(label);
-        row.setFocusableInTouchMode(true);
-        row.findViewById(R.id.icon).setVisibility(View.GONE);
-        row.findViewById(R.id.dot).setVisibility(View.GONE);
-        row.findViewById(R.id.status).setVisibility(View.GONE);
-        row.setOnClickListener(v -> action.run());
-        rows.addView(row);
-        row.setOnKeyListener((v, key, event) -> {
-            int index = rows.indexOfChild(v);
-            return event.getAction() == KeyEvent.ACTION_DOWN && (key == KeyEvent.KEYCODE_DPAD_LEFT
-                    || key == KeyEvent.KEYCODE_DPAD_RIGHT || key == KeyEvent.KEYCODE_DPAD_UP && index == 0
-                    || key == KeyEvent.KEYCODE_DPAD_DOWN && index == rows.getChildCount() - 1);
-        });
+        rows.addView(HomeMenu.row(activity, rows, R.drawable.ic_apps, activity.getString(label), "", action));
     }
 
     private TextView text(String value, int size, int color) {
@@ -605,6 +548,7 @@ final class AppLibraryDialog {
             row.setPadding(dp(10), dp(12), dp(10), dp(10));
             row.setFocusableInTouchMode(true);
             row.setClickable(true);
+            row.setDefaultFocusHighlightEnabled(false);
             LinearLayout content = new LinearLayout(activity);
             content.setOrientation(LinearLayout.VERTICAL);
             content.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -661,7 +605,7 @@ final class AppLibraryDialog {
                 if (focused) {
                     selectedPackage = pkg;
                     focusedApp.accept(pkg);
-                    instructions.setText(hint(onHome.test(pkg)));
+                    instructions.setText(hint(onHome.test(pkg)) + " · 返回关闭");
                     v.post(() -> { if (v.hasFocus() && catalog != null) highlight(v, true); });
                     int index = holder.getBindingAdapterPosition();
                     if (index != RecyclerView.NO_POSITION) selectedPosition = index;

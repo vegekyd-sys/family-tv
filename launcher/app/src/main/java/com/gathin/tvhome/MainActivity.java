@@ -402,6 +402,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         coocaaSources = cfg.coocaaSources;
 
         root = findViewById(R.id.root);
+        HomeMenu.immersive(root);
         root.setBackgroundColor(cfg.backgroundColor);
         // root fills the window with an opaque colour (Config keeps background_color opaque), so the window's own
         // black under it is a second full-screen fill on every frame for nothing. The starting window still uses
@@ -626,25 +627,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
         View btnFamily = findViewById(R.id.btnFamily);
         familyShelf = new FamilyShelf(this);
-        btnFamily.setOnClickListener(v -> familyShelf.showRecent());
+        btnFamily.setOnClickListener(v -> showRecentMenu());
         btnInputs = findViewById(R.id.btnInputs);
         View btnSettings = findViewById(R.id.btnSettings);
         btnInputs.setOnClickListener(v -> showInputs());
         btnWifi.setOnClickListener(v -> openNetworkPill());
-        btnWifi.setOnLongClickListener(v -> {
-            open(systemIntent(Settings.ACTION_WIFI_SETTINGS));
-            return true;
-        });
+        btnWifi.setOnLongClickListener(v -> { openNetworkPill(); return true; });
         launcherSettingsButton = cfg.launcherSettingsButton;
         if (launcherSettingsButton) {
             ((TextView) btnSettings).setText(R.string.launcher_settings);
             ((TextView) btnSettings).setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_home_settings_pill, 0, 0, 0);
         }
-        btnSettings.setOnClickListener(v -> {
-            if (launcherSettingsButton) startActivityForResult(
-                    new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST);
-            else open(systemIntent(Settings.ACTION_SETTINGS));
-        });
+        btnSettings.setOnClickListener(v -> showHomeSettings());
         btnReorder = findViewById(R.id.btnReorder);
         btnReorder.setOnClickListener(v -> toggleReorder());
         btnReorder.setVisibility(cfg.reorderButton ? View.VISIBLE : View.GONE);
@@ -824,6 +818,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (openLauncherSettingsIfAsked(intent)) return;
         if (openInputsIfAsked(intent)) return;
         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
+        if (appLibrary != null) appLibrary.close();
+        if (openPopup != null) openPopup.dismiss();
         grid.scrollToPosition(0);
         lastFocused = 0;
         lastFocusedKey = adapter.getItemCount() > 0 ? adapter.keyAt(0) : null;
@@ -1120,6 +1116,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
+            HomeMenu.immersive(root);
             startPendingSettingsReorder();
             if (libraryFocusPending && appLibrary == null) focusLibrary();
             showCardPrompt();
@@ -1131,7 +1128,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         super.onDestroy();
         unregisterReceiver(packageReceiver);
         wallpaperPlayer.close();
-        if (familyShelf != null) familyShelf.close();
         if (focusBackdrop != null) focusBackdrop.close();
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
         TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
@@ -1517,7 +1513,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             grid.post(() -> {
                 if (libraryFocusPending && appLibrary == null && hasWindowFocus() && !isFinishing()) focusLibrary();
             });
-        }, pkg -> focusBackdrop.show(ArtCatalog.keyForPackage(pkg)));
+        }, pkg -> { /* Keep the home backdrop stable while a menu is open. */ });
         openPopup = appLibrary.popup;
         appLibrary.show();
     }
@@ -2630,13 +2626,55 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         return 0xFF000000 | (r << 16) | (g << 8) | b;
     }
 
-    /** The network pill opens the VPN app when one is configured and installed, otherwise Wi-Fi settings. */
-    private void openNetworkPill() {
-        Intent i = vpnApp.isEmpty() ? null : getPackageManager().getLeanbackLaunchIntentForPackage(vpnApp);
-        if (i == null && !vpnApp.isEmpty()) i = getPackageManager().getLaunchIntentForPackage(vpnApp);
-        open(i != null ? i : systemIntent(Settings.ACTION_WIFI_SETTINGS));
+    private HomeMenu homeMenu(String title, String description, View anchor) {
+        if (appLibrary != null) appLibrary.close();
+        if (openPopup != null) openPopup.dismiss();
+        final HomeMenu[] holder = new HomeMenu[1];
+        HomeMenu menu = new HomeMenu(this, title, description, animations, reducedMotion, () -> {
+            if (openPopup == holder[0].popup) openPopup = null;
+            anchor.requestFocus();
+        });
+        holder[0] = menu;
+        openPopup = menu.popup;
+        return menu;
     }
 
+    private void showRecentMenu() {
+        HomeMenu menu = homeMenu("最近打开", "本地入口记录 · 观看进度请进入极光查看", findViewById(R.id.btnFamily));
+        menu.addRow(R.drawable.ic_recent, "极光观看历史", "", () -> familyShelf.open("history"));
+        for (String id : familyShelf.recent()) {
+            menu.addRow(R.drawable.ic_recent, familyShelf.label(id), "", () -> familyShelf.open(id));
+        }
+        menu.show();
+    }
+
+    private void openNetworkPill() {
+        CharSequence network = wifiIconOnly ? btnWifi.getContentDescription() : btnWifi.getText();
+        HomeMenu menu = homeMenu("网络", TextUtils.isEmpty(network) ? "连接与网络应用" : network.toString(),
+                findViewById(topMenu ? R.id.btnSettings : R.id.btnWifi));
+        menu.addRow(R.drawable.ic_wifi, "Wi-Fi 设置", "", () -> open(systemIntent(Settings.ACTION_WIFI_SETTINGS)));
+        Intent intent = vpnApp.isEmpty() ? null : getPackageManager().getLeanbackLaunchIntentForPackage(vpnApp);
+        if (intent == null && !vpnApp.isEmpty()) intent = getPackageManager().getLaunchIntentForPackage(vpnApp);
+        if (intent != null) {
+            final Intent launch = intent;
+            String name = "网络应用";
+            try { name = String.valueOf(getPackageManager().getApplicationLabel(getPackageManager().getApplicationInfo(vpnApp, 0))); }
+            catch (PackageManager.NameNotFoundException ignored) { }
+            menu.addRow(R.drawable.ic_apps, name, "", () -> open(launch));
+        }
+        menu.show();
+    }
+
+    private void showHomeSettings() {
+        HomeMenu menu = homeMenu("设置", "电视与桌面", findViewById(R.id.btnSettings));
+        menu.addRow(R.drawable.ic_settings, "系统设置", "", () -> open(systemIntent(Settings.ACTION_SETTINGS)));
+        menu.addRow(R.drawable.ic_home_settings_pill, getString(R.string.launcher_settings), "",
+                () -> startActivityForResult(new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST));
+        menu.addRow(R.drawable.ic_swap_vert, getString(R.string.reorder), "", this::toggleReorder);
+        if (moduleCards) menu.addRow(R.drawable.ic_apps, getString(R.string.module_cards), "", this::showModuleCards);
+        if (dockRow) menu.addRow(R.drawable.ic_apps, getString(R.string.dock_edit), "", this::startDockEdit);
+        menu.show();
+    }
 
     /** Every settings entry shares the standard intent and the vendor fallback (SystemSettings). */
     private Intent systemIntent(String standardAction) {
@@ -2785,28 +2823,17 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         open(new Intent(inputAction).setDataAndType(uri, "vnd.android.cursor.item/channel"));
     }
 
-    /** Dropdown menu under the Inputs pill: HDMI ports (with connection state), AV and Live TV. */
+    /** Shared input menu: HDMI/AV sources and live TV retain their vendor-specific routes. */
     private void showInputs() {
-        // A configured source panel and no Live TV row to offer next to it: the panel is the whole menu.
-        // The BYINTEK U4 needs this, as its TvInputManager lists three HDMI ports and an AV input it doesn't have.
         List<CoocaaSources.Source> coocaa = coocaaSources ? CoocaaSources.list(this) : Collections.emptyList();
-        if (coocaa.isEmpty() && !sourcePanelService.isEmpty() && liveTvIntent() == null) {
-            openSourcePanel();
-            return;
-        }
-        // top_menu: the pill is gone, so the list hangs under the gear, growing inward from the right.
-        // Read the switch, not the pill: show_inputs_pill=false hides the pill too, and there the list
-        // keeps its usual place.
-        boolean underGear = topMenu;
-        View anchor = findViewById(underGear ? R.id.btnSettings : R.id.btnInputs);
-        View panel = getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
-        LinearLayout rows = panel.findViewById(R.id.rows);
+        View anchor = findViewById(topMenu ? R.id.btnSettings : R.id.btnInputs);
+        HomeMenu menu = homeMenu("输入源", "选择电视信号来源", anchor);
+        LinearLayout rows = menu.rows();
+        final PopupWindow popup = menu.popup;
 
-        // Compact: as wide as the Inputs pill (a touch wider so "HDMI 1" fits), hanging right below it.
-        int width = Math.max(anchor.getWidth(), (int) (150 * density));
-        final PopupWindow popup = glassPopup(panel, width);
-
-        TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
+        // Keep the configured vendor panel as the only source option on boxes with phantom ports.
+        boolean sourcePanelOnly = coocaa.isEmpty() && !sourcePanelService.isEmpty() && liveTvIntent() == null;
+        TvInputManager tim = sourcePanelOnly ? null : (TvInputManager) getSystemService(TV_INPUT_SERVICE);
         boolean sawNonHdmi = false;
         String tunerId = null;
         boolean tunerIsHw = false;
@@ -2945,17 +2972,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             addInputRow(rows, popup, R.drawable.ic_livetv, getString(R.string.live_tv), -1, () -> open(liveTvIntent));
         }
         if (rows.getChildCount() == 0) {
-            Toast.makeText(this, R.string.no_inputs, Toast.LENGTH_SHORT).show();
-            return;
+            menu.subtitle.setText(R.string.no_inputs);
+            menu.addRow(R.drawable.ic_settings, "系统设置", "", () -> open(systemIntent(Settings.ACTION_SETTINGS)));
         }
-
-        // Fit the widest row: TVs that report a status on every port (Sony) would otherwise squeeze the names out.
-        panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-        popup.setWidth(Math.max(width, Math.min(panel.getMeasuredWidth(), (int) (360 * density))));
-
-        int alignment = getResources().getBoolean(R.bool.rtl_menu_bar) != underGear ? Gravity.END : Gravity.START;
-        dropIn(popup, panel, anchor, alignment);
-        rows.getChildAt(0).requestFocus();
+        menu.show();
     }
 
     private PopupWindow glassPopup(View panel, int width) {
@@ -2996,6 +3016,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void addInputRow(LinearLayout rows, PopupWindow popup, int iconRes, String title, int state, Runnable action) {
+        if (rows.getTag() instanceof HomeMenu) {
+            String status = state == TvInputManager.INPUT_STATE_CONNECTED ? getString(R.string.connected)
+                    : state == TvInputManager.INPUT_STATE_DISCONNECTED ? getString(R.string.not_connected) : "";
+            ((HomeMenu) rows.getTag()).addRow(iconRes, title, status, action);
+            return;
+        }
         View row = getLayoutInflater().inflate(R.layout.item_input, rows, false);
         ((ImageView) row.findViewById(R.id.icon)).setImageResource(iconRes);
         ((TextView) row.findViewById(R.id.title)).setText(title);
@@ -3022,12 +3048,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     // ---- launcher settings and module cards -------------------------------------------------------
 
-    /** top_menu: the gear's dropdown, standing in for the Inputs, Wi-Fi and Settings pills. */
+    /** Optional single-gear configuration uses the same menu shell. */
     private void showTopMenu() {
         View anchor = findViewById(R.id.btnSettings);
-        View panel = getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
-        LinearLayout rows = panel.findViewById(R.id.rows);
-        PopupWindow popup = glassPopup(panel, (int) (220 * density));
+        HomeMenu menu = homeMenu("设置", "电视与桌面", anchor);
+        LinearLayout rows = menu.rows();
+        PopupWindow popup = menu.popup;
         // Inputs opens its own list once this one has closed.
         if (showInputsMenuRow) addInputRow(rows, popup, R.drawable.ic_input, getString(R.string.inputs), -1, () -> root.post(this::showInputs));
         addInputRow(rows, popup, R.drawable.ic_wifi, getString(R.string.quick_network), -1, this::openNetworkPill);
@@ -3045,30 +3071,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             addInputRow(rows, popup, R.drawable.ic_settings, getString(R.string.settings), -1,
                     () -> open(systemIntent(Settings.ACTION_SETTINGS)));
         }
-        panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-        popup.setWidth(Math.max((int) (220 * density), Math.min(panel.getMeasuredWidth(), (int) (360 * density))));
-        dropIn(popup, panel, anchor, getResources().getBoolean(R.bool.rtl_menu_bar) ? Gravity.START : Gravity.END);
-        rows.getChildAt(0).requestFocus();
+        menu.show();
     }
 
-    /** The header opens launcher settings directly; hold OK keeps the extra home actions available. */
-    private void showSettingsMenu() {
-        View anchor = findViewById(R.id.btnSettings);
-        View panel = getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
-        LinearLayout rows = panel.findViewById(R.id.rows);
-        PopupWindow popup = glassPopup(panel, (int) (200 * density));
-        if (!launcherSettingsButton) addSettingsMenuRow(rows, popup, R.string.launcher_settings, () -> startActivityForResult(
-                new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST));
-        if (moduleCards) addSettingsMenuRow(rows, popup, R.string.module_cards, this::showModuleCards);
-        if (dockRow) addSettingsMenuRow(rows, popup, R.string.dock_edit, this::startDockEdit);
-        addSettingsMenuRow(rows, popup, R.string.reorder, this::toggleReorder);
-        panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-        popup.setWidth(Math.max((int) (200 * density), panel.getMeasuredWidth()));
-        // Hebrew puts Settings at the left of the header: grow the menu inward from it.
-        dropIn(popup, panel, anchor, getResources().getBoolean(R.bool.rtl_menu_bar)
-                ? Gravity.START : Gravity.END);
-        rows.getChildAt(0).requestFocus();
-    }
+    /** Long press opens the same settings surface as a regular click. */
+    private void showSettingsMenu() { showHomeSettings(); }
 
     /**
      * Hold OK on a tile: a glass menu next to it. Move starts reorder mode with this tile already picked up;

@@ -4,7 +4,9 @@
 
 原生 Android TV 桌面，面向遥控器操作与家庭常用内容。基于 [Gathin23/cleanyourtv](https://github.com/Gathin23/cleanyourtv) 的 MIT 开源桌面持续开发。
 
-当前源码版本 **0.4.9**：首行内容卡与应用行共用一个 RecyclerView、卡片布局、焦点高亮和滚动路径。向下逐行浏览，向上回到第一行时恢复底部四卡；所有行使用相同落点与 300ms 动画。
+当前源码版本 **0.4.10 开发版**，最近稳定源码 Release 为 **0.4.9**。输入源、最近打开、网络、应用库、设置共用同一玻璃面板和遥控行为，设计细则见 [UI 规范](docs/ui-spec.md)。
+
+首页首行内容卡与应用行共用一个 RecyclerView、卡片布局、焦点高亮和滚动路径。向下逐行浏览，向上回到第一行时恢复底部四卡；所有行使用相同落点与 300ms 动画。
 
 ## 功能
 
@@ -33,6 +35,7 @@ python3 tools/test-local-guard.py
 python3 tools/dev.py up
 python3 tools/smoke-ui.py
 python3 tools/check-row-motion.py
+python3 tools/check-home-menus.py
 ```
 
 这些工具只允许 `FamilyTV_UI / emulator-5580`，并核对模拟器标识，不会自动寻找真实电视。默认镜像为 ARM64，适合 Apple Silicon；其他主机可预先创建同名、同端口的适用 TV AVD。第三方测试应用是本地替身，只检查入口、参数和返回，不代表真实播放结果；不要将 fixtures 安装到电视。

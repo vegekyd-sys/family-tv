@@ -1,0 +1,4 @@
+<resources>
+    <item name="homeMenuPanel" type="id" />
+    <item name="homeMenuTitle" type="id" />
+</resources>
