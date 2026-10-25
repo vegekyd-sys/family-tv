@@ -24,7 +24,7 @@ jobs:
             launcher/**/*.gradle
             launcher/gradle/wrapper/gradle-wrapper.properties
       - name: Install Android SDK packages
-        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0"'
       - name: Check local-device guard
         run: python3 tools/test-local-guard.py
       - name: Test, lint and build
