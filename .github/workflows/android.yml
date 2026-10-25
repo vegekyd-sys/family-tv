@@ -1,0 +1,48 @@
+name: Android CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: |
+            launcher/**/*.gradle
+            launcher/gradle/wrapper/gradle-wrapper.properties
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+      - name: Check local-device guard
+        run: python3 tools/test-local-guard.py
+      - name: Test, lint and build
+        working-directory: launcher
+        run: ./gradlew --no-daemon --console=plain :app:testReleaseUnitTest :app:lintRelease :app:assembleRelease :fixtures:assembleDebug :adbkeeper:assembleRelease
+      - name: Upload development APK
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: family-tv-development-apk
+          path: launcher/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload test and lint reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: verification-reports
+          path: |
+            launcher/app/build/reports/tests/testReleaseUnitTest/
+            launcher/app/build/reports/lint-results-release.html
+          retention-days: 7

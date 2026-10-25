@@ -1,0 +1,16 @@
+plugins { id 'com.android.application' }
+android {
+ namespace 'live.tianyi.fixture'
+ compileSdk 34
+ defaultConfig { minSdk 26; targetSdk 34; versionCode 1; versionName 'local-fixture-1' }
+ flavorDimensions 'service'
+ productFlavors {
+  aurora { dimension 'service'; applicationId 'com.ktcp.video'; resValue 'string', 'app_name', '云视听极光' }
+  filmly { dimension 'service'; applicationId 'com.netease.filmlytv'; resValue 'string', 'app_name', '网易爆米花' }
+  bili { dimension 'service'; applicationId 'com.xiaodianshi.tv.yst'; resValue 'string', 'app_name', 'B站' }
+  music { dimension 'service'; applicationId 'com.tencent.qqmusictv'; resValue 'string', 'app_name', 'QQ音乐' }
+  smarttube { dimension 'service'; applicationId 'org.smarttube.stable'; resValue 'string', 'app_name', 'SmartTube' }
+  voice { dimension 'service'; applicationId 'live.tianyi.vvoice.tv'; resValue 'string', 'app_name', '语音 V' }
+  vpn { dimension 'service'; applicationId 'com.r3studio.monoproxy'; resValue 'string', 'app_name', 'MonoCloud' }
+ }
+}

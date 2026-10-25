@@ -1,0 +1,22 @@
+# Build outputs and private local state
+.DS_Store
+.gradle/
+**/build/
+**/local.properties
+__pycache__/
+evidence/
+releases/
+*.apk
+*.aab
+*.log
+*.pid
+*.jks
+*.keystore
+*.pem
+*.key
+.env
+.env.*
+launcher/app/src/main/assets/art/
+launcher/app/src/main/assets/backdrops/
+launcher/app/src/main/assets/card/
+launcher/app/src/main/assets/film/
