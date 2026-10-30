@@ -357,6 +357,40 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     };
 
+    private StartupCue vStartTone;
+    private long vStartToneDeadline;
+    private final Runnable vStartTonePulse=new Runnable(){public void run(){
+        if(vStartToneDeadline==0)return;
+        if(android.os.SystemClock.elapsedRealtime()>=vStartToneDeadline){stopVStartTone();return;}
+        if(vStartTone!=null){boolean started=vStartTone.play();android.util.Log.i("VStartupCue","pulse accepted="+started+" elapsed="+android.os.SystemClock.elapsedRealtime());}
+        handler.postDelayed(this,2400);
+    }};
+    private void stopVStartTone(){if(vStartToneDeadline!=0)android.util.Log.i("VStartupCue","stopped elapsed="+android.os.SystemClock.elapsedRealtime());vStartToneDeadline=0;handler.removeCallbacks(vStartTonePulse);if(vStartTone!=null)vStartTone.stop();}
+    private boolean vSurfacePending, vSurfaceActive;
+    private long vSurfaceQuery, vLaunchRequest;
+    private final BroadcastReceiver vSurfaceReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            if("live.tianyi.vvoice.tv.STARTUP_CUE_END".equals(intent.getAction())){stopVStartTone();return;}
+            if(!intent.getBooleanExtra("active",true))stopVStartTone();
+            vSurfaceQuery++;
+            vSurfacePending=false;
+            vSurfaceActive=intent.getBooleanExtra("active",true);
+            View portrait=findViewById(R.id.btnVIsland);
+            // Keep the Home navigation target while the service paints its live
+            // reaction over the same position. Passive overlay never takes keys.
+            portrait.setVisibility(View.VISIBLE);
+            portrait.setAlpha(vSurfaceActive?0f:1f);
+            ((VIslandButton)portrait).setLaunching(false,false);
+        }
+    };
+
+    // API <33 has no export flag requirement; signature permission still gates every sender.
+    @android.annotation.SuppressLint("UnspecifiedRegisterReceiverFlag")
+    private void registerVSurfaceReceiver(IntentFilter filter) {
+        if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(vSurfaceReceiver, filter, "live.tianyi.familytv.permission.VOICE_SURFACE", null, Context.RECEIVER_EXPORTED);
+        else registerReceiver(vSurfaceReceiver, filter, "live.tianyi.familytv.permission.VOICE_SURFACE", null);
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -369,6 +403,32 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         setContentView(R.layout.activity_main);
         density = getResources().getDisplayMetrics().density;
+        IntentFilter surfaceFilter = new IntentFilter("live.tianyi.vvoice.tv.SURFACE_READY");
+        surfaceFilter.addAction("live.tianyi.vvoice.tv.STARTUP_CUE_END");
+        registerVSurfaceReceiver(surfaceFilter);
+        vStartTone=new StartupCue(handler);
+        View island = findViewById(R.id.btnVIsland);
+        findViewById(R.id.btnSettings).setNextFocusDownId(R.id.btnVIsland);
+        island.setOnClickListener(v -> {
+            if(vSurfaceActive){sendBroadcast(new Intent("live.tianyi.vvoice.tv.QUERY_SURFACE").setPackage("live.tianyi.vvoice.tv.lab").putExtra("expand",true));return;}
+            if(vSurfacePending)return;
+            vSurfacePending = true;
+            android.util.Log.i("VStartupCue","gesture elapsed="+android.os.SystemClock.elapsedRealtime());
+            vStartToneDeadline=android.os.SystemClock.elapsedRealtime()+30000;
+            vStartTonePulse.run();
+            ((VIslandButton)v).setLaunching(true,true);
+            long launch=++vLaunchRequest;
+            handler.postDelayed(()->{if(vSurfacePending&&vLaunchRequest==launch){stopVStartTone();vSurfacePending=false;((VIslandButton)v).setLaunching(false,true);}},30000);
+            focusTile(lastFocused);
+            try { startActivity(new Intent("live.tianyi.vvoice.tv.action.START_CALL").setClassName("live.tianyi.vvoice.tv.lab", "live.tianyi.vvoice.tv.MainActivity")); }
+            catch (android.content.ActivityNotFoundException e) { stopVStartTone();vSurfacePending=false; ((VIslandButton)v).setLaunching(false,true); Toast.makeText(this,"请先安装本地 V 灵动岛候选",Toast.LENGTH_SHORT).show(); }
+        });
+        island.setOnKeyListener((v,k,e)-> {
+            if(e.getAction()!=KeyEvent.ACTION_DOWN)return false;
+            if(k==KeyEvent.KEYCODE_DPAD_DOWN){focusTile(lastFocused);return true;}
+            if(k==KeyEvent.KEYCODE_DPAD_UP||k==KeyEvent.KEYCODE_DPAD_LEFT){findViewById(R.id.btnSettings).requestFocus();return true;}
+            return k==KeyEvent.KEYCODE_DPAD_RIGHT;
+        });
         // config.xml, overlaid by config.json from a pushed theme (see Config and tools/theme.sh).
         Config cfg = Config.load(this);
         appLibrarySelection = cfg.appLibrarySelection;
@@ -721,7 +781,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
         // Hide the glass when focus leaves the tiles.
         getWindow().getDecorView().getViewTreeObserver().addOnGlobalFocusChangeListener((oldF, newF) -> {
-            if(newF==btnFamily || newF==btnInputs || newF==btnWifi || newF==btnSettings || newF==btnReorder || newF==btnLibraryTop)
+            if(newF==findViewById(R.id.btnVIsland) || newF==btnFamily || newF==btnInputs || newF==btnWifi || newF==btnSettings || newF==btnReorder || newF==btnLibraryTop)
                 focusBackdrop.setGaussian(true);
             boolean onTile = newF != null && newF.getId() == R.id.card;
             if (!onTile) hideGlass();
@@ -850,6 +910,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onResume() {
         super.onResume();
+        findViewById(R.id.btnVIsland).setVisibility(View.VISIBLE);
+        findViewById(R.id.btnVIsland).setAlpha(vSurfaceActive?0f:1f);
+        long surfaceQuery=++vSurfaceQuery;
+        sendBroadcast(new Intent("live.tianyi.vvoice.tv.QUERY_SURFACE").setPackage("live.tianyi.vvoice.tv.lab"));
+        handler.postDelayed(()->{if(vSurfaceQuery==surfaceQuery&&!vSurfacePending){vSurfaceActive=false;((VIslandButton)findViewById(R.id.btnVIsland)).setLaunching(false,false);findViewById(R.id.btnVIsland).setAlpha(1f);}},900);
         AdbMaintenance.homeReady(this);
         // A festival that started or ended while Home was in the background: rebuild with or without it.
         if (festive != festival.active(LocalDate.now())) {
@@ -1062,6 +1127,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onPause() {
         super.onPause();
+        if(!vSurfacePending)findViewById(R.id.btnVIsland).setVisibility(View.INVISIBLE);
+        if(focusBackdrop!=null)focusBackdrop.setGaussian(false);
         root.removeCallbacks(showIdleClock);
         endReorder();   // Home or another app while reordering keeps the order so far
         wallpaperPlayer.stop();
@@ -1125,8 +1192,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     @Override
     protected void onDestroy() {
+        stopVStartTone();if(vStartTone!=null){vStartTone.release();vStartTone=null;}
         super.onDestroy();
         unregisterReceiver(packageReceiver);
+        unregisterReceiver(vSurfaceReceiver);
         wallpaperPlayer.close();
         if (focusBackdrop != null) focusBackdrop.close();
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
@@ -1170,6 +1239,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      */
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if(!reordering && openPopup==null && cardPrompt==null && event.getAction()==KeyEvent.ACTION_DOWN
+            && event.getKeyCode()==KeyEvent.KEYCODE_DPAD_UP && focusedTilePosition()>=0 && focusedTilePosition()<COLUMNS){
+            findViewById(R.id.btnVIsland).requestFocus();return true;
+        }
         if (handleSettingsKey(event)) return true;
         if (tileMenuEnabled && !reordering && openPopup == null && cardPrompt == null
                 && event.getKeyCode() == KeyEvent.KEYCODE_MENU) {

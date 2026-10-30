@@ -11,8 +11,8 @@ android {
         applicationId 'live.tianyi.familytv.dev'
         minSdk 26
         targetSdk 34
-        versionCode 21
-        versionName '0.4.11-local'
+        versionCode 2208
+        versionName '0.4.19-media-cue-local'
     }
 
     buildTypes {
