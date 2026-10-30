@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <uses-permission android:name="live.tianyi.familytv.permission.VOICE_SURFACE"/>
+    <permission android:name="live.tianyi.familytv.permission.VOICE_SURFACE" android:protectionLevel="signature" />
+
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.hardware.wifi" android:required="false" />
@@ -26,6 +29,7 @@
     <!-- Android 11+ package visibility: lets the launcher list the TV apps it shows as tiles, and the
          apps that declare a module card (docs/specs/card.md). -->
     <queries>
+        <package android:name="live.tianyi.vvoice.tv.lab" />
         <package android:name="live.tianyi.tvadbkeeper" />
         <!-- The standard settings handlers, so package visibility doesn't hide them and send the pills to a vendor fallback by mistake. -->
         <intent>
