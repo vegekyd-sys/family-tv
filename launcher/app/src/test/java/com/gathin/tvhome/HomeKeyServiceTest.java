@@ -7,6 +7,15 @@ import static org.junit.Assert.assertTrue;
 public class HomeKeyServiceTest {
     private static final long SOON = 45_000L;
 
+    @Test public void redirectsOnlyXiaomiWakeAdActivities() {
+        String mi = "com.mitv.tvhome";
+        assertTrue(HomeKeyService.isWakeAdWindow(mi, mi + ".BootActivity"));
+        assertTrue(HomeKeyService.isWakeAdWindow(mi, mi + ".DialogBootActivity"));
+        assertFalse(HomeKeyService.isWakeAdWindow("", mi + ".BootActivity"));
+        assertFalse(HomeKeyService.isWakeAdWindow("other.launcher", mi + ".BootActivity"));
+        assertFalse(HomeKeyService.isWakeAdWindow(mi, mi + ".VideoActivity"));
+    }
+
     @Test public void aTapIsAShortPress() {
         assertTrue(HomeKeyService.isShortPress(1_000, 1_120, 400));
     }
