@@ -56,6 +56,7 @@ public class HomeKeyService extends AccessibilityService {
     private BroadcastReceiver unlockReceiver;
     /** The stock launcher's HOME activities (stock_home_redirect), disabled ones included. */
     private final Set<String> stockHome = new HashSet<>();
+    private String stockHomePackage = "";
     /** Stops key filtering while a game controller is connected; null unless gamepad_passthrough and key_filter, or before the unlock. */
     private GamepadPassthrough gamepads;
 
@@ -113,6 +114,7 @@ public class HomeKeyService extends AccessibilityService {
         appScancodes = RemoteKeys.parseAppScancodes(config.appKeys);
         RemoteKeys.applyKeyFilter(this, config.keyFilter);
         stockHome.clear();
+        stockHomePackage = config.stockHomeRedirect;
         if (!config.stockHomeRedirect.isEmpty()) {
             Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(config.stockHomeRedirect);
             for (ResolveInfo ri : getPackageManager().queryIntentActivities(home, PackageManager.MATCH_DISABLED_COMPONENTS)) {
@@ -189,7 +191,17 @@ public class HomeKeyService extends AccessibilityService {
         // stock_home_redirect: the firmware turned the stock launcher back on and its home screen came up.
         if (stockHome.isEmpty() || event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return;
         CharSequence cls = event.getClassName();
-        if (cls != null && stockHome.contains(cls.toString())) openHome();
+        CharSequence pkg = event.getPackageName();
+        if (cls == null || pkg == null || !stockHomePackage.contentEquals(pkg)) return;
+        if (stockHome.contains(cls.toString()) || isWakeAdWindow(stockHomePackage, cls.toString())) openHome();
+    }
+
+    // The Xiaomi launcher can stage this separate activity while the panel is off.
+    // Both variants pause video when covered by Home.
+    static boolean isWakeAdWindow(String stockPackage, String activity) {
+        return "com.mitv.tvhome".equals(stockPackage)
+                && ("com.mitv.tvhome.BootActivity".equals(activity)
+                    || "com.mitv.tvhome.DialogBootActivity".equals(activity));
     }
 
     /** How long after boot the first bind still counts as "at boot" for probeAtBoot. */
