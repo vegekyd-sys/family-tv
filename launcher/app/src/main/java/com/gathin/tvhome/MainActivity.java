@@ -419,7 +419,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             ((VIslandButton)v).setLaunching(true,true);
             long launch=++vLaunchRequest;
             handler.postDelayed(()->{if(vSurfacePending&&vLaunchRequest==launch){stopVStartTone();vSurfacePending=false;((VIslandButton)v).setLaunching(false,true);}},30000);
-            focusTile(lastFocused);
+            // Leave Home on the island while the call overlay takes the confirmation key.
             try { startActivity(new Intent("live.tianyi.vvoice.tv.action.START_CALL").setClassName("live.tianyi.vvoice.tv.lab", "live.tianyi.vvoice.tv.MainActivity")); }
             catch (android.content.ActivityNotFoundException e) { stopVStartTone();vSurfacePending=false; ((VIslandButton)v).setLaunching(false,true); Toast.makeText(this,"请先安装本地 V 灵动岛候选",Toast.LENGTH_SHORT).show(); }
         });
@@ -1104,8 +1104,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         final int returnSlot = lastFocused;
         grid.post(() -> {
             int pos = adapter.positionOf(returnKey);
-            if (returnToLibrary || libraryFocusPending) focusLibrary();
-            else focusTile(pos >= 0 ? pos : returnSlot);
+            View island = findViewById(R.id.btnVIsland);
+            boolean keepVoiceFocus = island.hasFocus() && (vSurfacePending || vSurfaceActive);
+            if (!keepVoiceFocus) {
+                if (returnToLibrary || libraryFocusPending) focusLibrary();
+                else focusTile(pos >= 0 ? pos : returnSlot);
+            }
             tilesReady = true;
             startPendingSettingsReorder();
             showCardPrompt();
